@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TodoApi.Data; // El namespace donde está tu TodoContext
 using TodoApi.Services;
+using TodoApi.Repositories; // O el namespace que corresponda
 using TodoApi.Services.Interfaces;
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +20,8 @@ builder.Services.AddDbContext<TodoContext>(options =>
     options.UseNpgsql(connectionString)); // Configurar para usar Npgsql (PostgreSQL)
 // Registrar nuestros servicios personalizados
 builder.Services.AddScoped<ITodoService, TodoService>();
+// Registrar Repositorio
+builder.Services.AddScoped<ITodoRepository, TodoRepository>();
 // --- Más servicios existentes como builder.Services.AddEndpointsApiExplorer(); ---
 
 builder.Services.AddEndpointsApiExplorer();

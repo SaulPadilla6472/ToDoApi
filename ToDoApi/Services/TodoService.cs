@@ -1,22 +1,21 @@
-﻿using Microsoft.EntityFrameworkCore; // Para ToListAsync, FindAsync, SaveChangesAsync, etc.
-using TodoApi.Data;       // Para TodoContext
-using TodoApi.Models;     // Para TodoItem
+﻿using TodoApi.Models;     // Para TodoItem
 using TodoApi.Services.Interfaces; // Para ITodoService
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System;
+using TodoApi.Repositories;
 using System.Linq; // Para Any() en Update/Delete (opcional)
 
 namespace TodoApi.Services // O el namespace que corresponda a tu carpeta Services
 {
     public class TodoService : ITodoService // Implementa la interfaz
     {
-        private readonly TodoContext _context; // Dependencia del DbContext
+        private readonly ITodoRepository _todoRepository; // Dependencia del DbContext
 
-        // Constructor para inyectar el DbContext
-        public TodoService(TodoContext context)
+        // MODIFICAR ESTE CONSTRUCTOR:
+        public TodoService(ITodoRepository todoRepository) // Inyecta la interfaz del repositorio
         {
-            _context = context;
+            _todoRepository = todoRepository; // Asigna al campo del repositorio
         }
 
         // Ahora implementaremos los métodos de la interfaz ITodoService
@@ -26,72 +25,45 @@ namespace TodoApi.Services // O el namespace que corresponda a tu carpeta Servic
 
         public async Task<IEnumerable<TodoItem>> GetAllAsync()
         {
-            // Lógica movida desde el controlador
-            return await _context.TodoItems.ToListAsync();
+            // Delega totalmente al repositorio
+            return await _todoRepository.GetAllAsync();
         }
 
         public async Task<TodoItem?> GetByIdAsync(long id)
         {
-            // Lógica movida desde el controlador
-            return await _context.TodoItems.FindAsync(id);
-            // Devuelve null automáticamente si FindAsync no encuentra nada
+            // Delega totalmente al repositorio
+            return await _todoRepository.GetByIdAsync(id);
         }
 
         public async Task<TodoItem> CreateAsync(TodoItem newTodoItem)
         {
-            // Lógica movida desde el controlador
+            // Lógica de negocio/aplicación (ej: establecer valores por defecto)
             newTodoItem.CreatedAt = DateTime.UtcNow;
-            _context.TodoItems.Add(newTodoItem);
-            await _context.SaveChangesAsync();
-            return newTodoItem; // Devuelve el item con su nuevo Id
+
+            // Delega la adición y el guardado al repositorio
+            // Asumimos que AddAsync del repo devuelve el item con el Id poblado
+            return await _todoRepository.AddAsync(newTodoItem);
         }
 
         public async Task<bool> UpdateAsync(long id, TodoItem updatedTodoItem)
         {
-            // Busca el item existente
-            var existingTodo = await _context.TodoItems.FindAsync(id);
-
-            // Si no existe, no se puede actualizar -> devuelve false
-            if (existingTodo == null)
+            // Validación o lógica de negocio ANTES de llamar al repo (si la hubiera)
+            // Por ejemplo, asegurar consistencia de ID si el modelo lo trae
+            if (updatedTodoItem == null || id != updatedTodoItem.Id)
             {
+                // O manejar esto de otra forma, quizás lanzar excepción
+                // Depende de las reglas de negocio. Por ahora, devolvemos false.
                 return false;
             }
 
-            // Actualiza las propiedades
-            existingTodo.Title = updatedTodoItem.Title;
-            existingTodo.IsCompleted = updatedTodoItem.IsCompleted;
-            existingTodo.DueDate = updatedTodoItem.DueDate;
-
-            try
-            {
-                // Intenta guardar los cambios
-                await _context.SaveChangesAsync();
-                return true; // Éxito al guardar
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                // Manejo básico de concurrencia o simplemente indicar fallo
-                // Podrías verificar aquí si aún existe con _context.TodoItems.Any(e => e.Id == id)
-                return false; // Falló la actualización (podría ser concurrencia u otro error)
-            }
+            // Delega la actualización (que incluye buscar y guardar) al repositorio
+            return await _todoRepository.UpdateAsync(updatedTodoItem);
         }
 
         public async Task<bool> DeleteAsync(long id)
         {
-            // Busca el item
-            var todoToDelete = await _context.TodoItems.FindAsync(id);
-
-            // Si no existe, no se puede borrar -> devuelve false
-            if (todoToDelete == null)
-            {
-                return false;
-            }
-
-            // Marca para eliminar y guarda cambios
-            _context.TodoItems.Remove(todoToDelete);
-            await _context.SaveChangesAsync();
-
-            return true; // Éxito al eliminar
+            // Delega la eliminación (que incluye buscar y guardar) al repositorio
+            return await _todoRepository.DeleteAsync(id);
         }
     }
 }
