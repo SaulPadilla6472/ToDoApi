@@ -8,7 +8,7 @@ using System;
 
 namespace TodoApi.Controllers
 {
-    [Route("api/[controller]")] // Define la ruta base: /api/todo
+    [Route("api/todos")] // Cambiado a plural
     [ApiController] // Aplica convenciones y comportamientos estándar de API
     public class TodoController : ControllerBase // Hereda de ControllerBase para funcionalidades de API
     {
@@ -65,6 +65,56 @@ namespace TodoApi.Controllers
                 return NotFound(); // HTTP 404
             }
             return Ok(todo); // HTTP 200
+        }
+        // PUT: api/todos/5
+        [HttpPut("{id}")] // Especifica que este método maneja PUT con un parámetro 'id'
+        public IActionResult UpdateTodo(long id, TodoItem updatedTodo) // Recibe el id de la ruta y el objeto actualizado del cuerpo
+        {
+            // Validación 1: Asegurar que el ID en la ruta coincida con el ID en el cuerpo (si existe)
+            if (id != updatedTodo.Id)
+            {
+                // Si no coinciden, es una mala petición
+                return BadRequest("El ID de la ruta no coincide con el ID del cuerpo.");
+            }
+
+            // Buscar la tarea existente en la lista
+            var existingTodo = _todos.FirstOrDefault(t => t.Id == id);
+
+            // Validación 2: Si no se encuentra la tarea...
+            if (existingTodo == null)
+            {
+                return NotFound(); // Devuelve 404 Not Found
+            }
+
+            // Actualizar las propiedades del objeto existente con los valores del objeto recibido
+            // ¡No actualizamos el Id ni CreatedAt!
+            existingTodo.Title = updatedTodo.Title;
+            existingTodo.IsCompleted = updatedTodo.IsCompleted;
+            existingTodo.DueDate = updatedTodo.DueDate;
+
+            // Devolver una respuesta HTTP 204 No Content, indicando éxito sin devolver contenido.
+            // Es la respuesta estándar para un PUT exitoso.
+            return NoContent();
+        }
+        // DELETE: api/todos/5
+        [HttpDelete("{id}")] // Especifica que este método maneja DELETE con un parámetro 'id'
+        public IActionResult DeleteTodo(long id)
+        {
+            // Buscar la tarea a eliminar
+            var todoToDelete = _todos.FirstOrDefault(t => t.Id == id);
+
+            // Si no se encuentra la tarea...
+            if (todoToDelete == null)
+            {
+                return NotFound(); // Devuelve 404 Not Found
+            }
+
+            // Eliminar la tarea de la lista
+            _todos.Remove(todoToDelete);
+
+            // Devolver una respuesta HTTP 204 No Content, indicando éxito.
+            // Es la respuesta estándar para un DELETE exitoso.
+            return NoContent();
         }
 
 
