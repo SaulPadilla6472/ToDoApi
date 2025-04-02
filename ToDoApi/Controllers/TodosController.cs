@@ -1,132 +1,119 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using TodoApi.Models; // ¡Asegúrate de incluir tu namespace de Modelos!
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore; // Necesario para DbUpdateConcurrencyException, etc.
+using TodoApi.Data;       // Namespace de tu TodoContext
+using TodoApi.Models;     // Namespace de tu TodoItem
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System;
-
+using System.Threading.Tasks; // Necesario para async/await
 
 namespace TodoApi.Controllers
 {
-    [Route("api/todos")] // Cambiado a plural
-    [ApiController] // Aplica convenciones y comportamientos estándar de API
-    public class TodoController : ControllerBase // Hereda de ControllerBase para funcionalidades de API
+    [Route("api/todos")]
+    [ApiController]
+    public class TodoController : ControllerBase
     {
-        // Almacenamiento temporal en memoria (simula una base de datos)
-        private static List<TodoItem> _todos = new List<TodoItem>
-        {
-            new TodoItem { Id = 1, Title = "Aprender ASP.NET Core", IsCompleted = false, CreatedAt = DateTime.UtcNow },
-            new TodoItem { Id = 2, Title = "Crear API To-Do List", IsCompleted = false, CreatedAt = DateTime.UtcNow },
-            new TodoItem { Id = 3, Title = "Probar con Postman", IsCompleted = true, CreatedAt = DateTime.UtcNow }
-        };
+        private readonly TodoContext _context;
 
-        // Aquí añadiremos nuestras acciones (métodos)
-        [HttpGet] // Este atributo mapea peticiones HTTP GET a este método
-        public ActionResult<IEnumerable<TodoItem>> GetAllTodos()
+        public TodoController(TodoContext context)
         {
-            // Devuelve la lista completa de tareas
-            // Ok() genera una respuesta HTTP 200 OK con la lista en el cuerpo
-            return Ok(_todos);
+            _context = context;
         }
 
-        [HttpPost] // Este atributo mapea peticiones HTTP POST a este método
-        public ActionResult<TodoItem> CreateTodo(TodoItem todoItem) // Recibe el TodoItem del cuerpo de la petición
+        // --- GET All ---
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<TodoItem>>> GetAllTodos()
         {
-            // Asignar un nuevo ID (simple para el ejemplo en memoria)
-            // Usamos Max() + 1 para evitar colisiones simples si se borran items.
-            // Si la lista está vacía, empezamos en 1.
-            long nextId = _todos.Any() ? _todos.Max(t => t.Id) + 1 : 1;
-            todoItem.Id = nextId;
-
-            // Establecer la fecha de creación
-            todoItem.CreatedAt = DateTime.UtcNow;
-
-            // Añadir a la lista en memoria
-            _todos.Add(todoItem);
-
-            // Devolver una respuesta HTTP 201 Created
-            // CreatedAtAction genera:
-            // - Código 201 Created
-            // - Cabecera 'Location' apuntando a la URL del nuevo recurso (necesita un GET por ID)
-            // - El objeto recién creado en el cuerpo de la respuesta
-            // ¡Necesitaremos crear el método GetTodoById para que esto funcione 100%!
-            return CreatedAtAction(nameof(GetTodoById), new { id = todoItem.Id }, todoItem);
+            return Ok(await _context.TodoItems.ToListAsync());
         }
 
-        // --- Necesitaremos añadir GetTodoById(long id) aquí más tarde ---
-        // Placeholder temporal para que compile CreatedAtAction:
-        [HttpGet("{id}")] // Ruta será /api/todo/{id}
-        public ActionResult<TodoItem> GetTodoById(long id)
+        // --- GET by ID ---
+        [HttpGet("{id}")]
+        public async Task<ActionResult<TodoItem>> GetTodoById(long id)
         {
-            // Lógica para buscar por ID irá aquí más tarde
-            var todo = _todos.FirstOrDefault(t => t.Id == id);
+            var todo = await _context.TodoItems.FindAsync(id);
             if (todo == null)
             {
-                return NotFound(); // HTTP 404
+                return NotFound();
             }
-            return Ok(todo); // HTTP 200
+            return Ok(todo);
         }
-        // PUT: api/todos/5
-        [HttpPut("{id}")] // Especifica que este método maneja PUT con un parámetro 'id'
-        public IActionResult UpdateTodo(long id, TodoItem updatedTodo) // Recibe el id de la ruta y el objeto actualizado del cuerpo
+
+        // --- POST (CREAR) --- <<<<< ESTE ES EL MÉTODO QUE NECESITAS ASEGURARTE DE TENER >>>>>
+        [HttpPost] // Atributo que mapea el verbo POST a este método
+        public async Task<ActionResult<TodoItem>> CreateTodo(TodoItem todoItem)
         {
-            // Validación 1: Asegurar que el ID en la ruta coincida con el ID en el cuerpo (si existe)
+            // Establecemos valores generados por el servidor
+            todoItem.CreatedAt = DateTime.UtcNow;
+
+            // Añadimos la nueva entidad al contexto de EF Core
+            _context.TodoItems.Add(todoItem); // Marca la entidad como 'Added'
+
+            // Guardamos los cambios en la base de datos (ejecuta el INSERT)
+            await _context.SaveChangesAsync(); // Persiste los cambios
+
+            // Devolvemos una respuesta 201 Created.
+            // Para este punto, 'todoItem.Id' ya ha sido actualizado por EF Core
+            // con el valor generado por la base de datos.
+            return CreatedAtAction(
+                nameof(GetTodoById),       // Nombre del método GET para obtener el recurso creado
+                new { id = todoItem.Id },  // Parámetros de ruta para ese método GET
+                todoItem);                 // El objeto creado (con Id) en el cuerpo de la respuesta
+        }
+
+        // --- PUT (ACTUALIZAR) ---
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateTodo(long id, TodoItem updatedTodo)
+        {
             if (id != updatedTodo.Id)
             {
-                // Si no coinciden, es una mala petición
                 return BadRequest("El ID de la ruta no coincide con el ID del cuerpo.");
             }
 
-            // Buscar la tarea existente en la lista
-            var existingTodo = _todos.FirstOrDefault(t => t.Id == id);
-
-            // Validación 2: Si no se encuentra la tarea...
+            var existingTodo = await _context.TodoItems.FindAsync(id);
             if (existingTodo == null)
             {
-                return NotFound(); // Devuelve 404 Not Found
+                return NotFound();
             }
 
-            // Actualizar las propiedades del objeto existente con los valores del objeto recibido
-            // ¡No actualizamos el Id ni CreatedAt!
             existingTodo.Title = updatedTodo.Title;
             existingTodo.IsCompleted = updatedTodo.IsCompleted;
             existingTodo.DueDate = updatedTodo.DueDate;
 
-            // Devolver una respuesta HTTP 204 No Content, indicando éxito sin devolver contenido.
-            // Es la respuesta estándar para un PUT exitoso.
-            return NoContent();
-        }
-        // DELETE: api/todos/5
-        [HttpDelete("{id}")] // Especifica que este método maneja DELETE con un parámetro 'id'
-        public IActionResult DeleteTodo(long id)
-        {
-            // Buscar la tarea a eliminar
-            var todoToDelete = _todos.FirstOrDefault(t => t.Id == id);
-
-            // Si no se encuentra la tarea...
-            if (todoToDelete == null)
+            try
             {
-                return NotFound(); // Devuelve 404 Not Found
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Manejo básico (podría ser más robusto verificando si aún existe)
+                if (!_context.TodoItems.Any(e => e.Id == id))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw; // Relanzar si no sabemos qué hacer
+                }
             }
 
-            // Eliminar la tarea de la lista
-            _todos.Remove(todoToDelete);
-
-            // Devolver una respuesta HTTP 204 No Content, indicando éxito.
-            // Es la respuesta estándar para un DELETE exitoso.
             return NoContent();
         }
 
+        // --- DELETE ---
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteTodo(long id)
+        {
+            var todoToDelete = await _context.TodoItems.FindAsync(id);
+            if (todoToDelete == null)
+            {
+                return NotFound();
+            }
 
+            _context.TodoItems.Remove(todoToDelete); // Marca para eliminar
+            await _context.SaveChangesAsync();      // Ejecuta DELETE en la BD
 
-
-
-
-
-
-
-
-
-
+            return NoContent();
+        }
     }
 }
