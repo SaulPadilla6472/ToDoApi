@@ -1,11 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore; // Necesario para DbUpdateConcurrencyException, etc.
-using TodoApi.Data;       // Namespace de tu TodoContext
 using TodoApi.Models;     // Namespace de tu TodoItem
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks; // Necesario para async/await
+using TodoApi.Services.Interfaces;
 
 namespace TodoApi.Controllers
 {
@@ -13,107 +13,105 @@ namespace TodoApi.Controllers
     [ApiController]
     public class TodoController : ControllerBase
     {
-        private readonly TodoContext _context;
-
-        public TodoController(TodoContext context)
+        private readonly ITodoService _todoService;
+        // MODIFICAR ESTE CONSTRUCTOR:
+        public TodoController(ITodoService todoService) // Inyecta la interfaz del servicio
         {
-            _context = context;
+            _todoService = todoService; // Asigna al campo del servicio
         }
 
         // --- GET All ---
+        // GET: api/todos
         [HttpGet]
         public async Task<ActionResult<IEnumerable<TodoItem>>> GetAllTodos()
         {
-            return Ok(await _context.TodoItems.ToListAsync());
+            // Delega la obtención de datos al servicio
+            var todos = await _todoService.GetAllAsync();
+            // Devuelve el resultado obtenido del servicio
+            return Ok(todos);
         }
 
         // --- GET by ID ---
+        // GET: api/todos/5
         [HttpGet("{id}")]
         public async Task<ActionResult<TodoItem>> GetTodoById(long id)
         {
-            var todo = await _context.TodoItems.FindAsync(id);
+            // Pide el item al servicio
+            var todo = await _todoService.GetByIdAsync(id);
+
+            // Si el servicio devuelve null (no encontrado)...
             if (todo == null)
             {
-                return NotFound();
+                return NotFound(); // Devuelve 404 Not Found
             }
-            return Ok(todo);
+
+            // Si el servicio devuelve el item...
+            return Ok(todo); // Devuelve 200 OK con el item
         }
 
         // --- POST (CREAR) --- <<<<< ESTE ES EL MÉTODO QUE NECESITAS ASEGURARTE DE TENER >>>>>
-        [HttpPost] // Atributo que mapea el verbo POST a este método
+        // POST: api/todos
+        [HttpPost]
         public async Task<ActionResult<TodoItem>> CreateTodo(TodoItem todoItem)
         {
-            // Establecemos valores generados por el servidor
-            todoItem.CreatedAt = DateTime.UtcNow;
+            // Validación básica de entrada (podría ser más robusta)
+            if (todoItem == null)
+            {
+                return BadRequest("El objeto TodoItem no puede ser nulo.");
+            }
 
-            // Añadimos la nueva entidad al contexto de EF Core
-            _context.TodoItems.Add(todoItem); // Marca la entidad como 'Added'
+            // Llama al servicio para crear el item
+            // El servicio maneja la lógica de negocio (ej. poner CreatedAt) y guardar en BD
+            var createdTodo = await _todoService.CreateAsync(todoItem);
 
-            // Guardamos los cambios en la base de datos (ejecuta el INSERT)
-            await _context.SaveChangesAsync(); // Persiste los cambios
-
-            // Devolvemos una respuesta 201 Created.
-            // Para este punto, 'todoItem.Id' ya ha sido actualizado por EF Core
-            // con el valor generado por la base de datos.
+            // Devuelve la respuesta estándar 201 Created
             return CreatedAtAction(
-                nameof(GetTodoById),       // Nombre del método GET para obtener el recurso creado
-                new { id = todoItem.Id },  // Parámetros de ruta para ese método GET
-                todoItem);                 // El objeto creado (con Id) en el cuerpo de la respuesta
+                nameof(GetTodoById),
+                new { id = createdTodo.Id },
+                createdTodo);
         }
 
         // --- PUT (ACTUALIZAR) ---
+        // PUT: api/todos/5
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateTodo(long id, TodoItem updatedTodo)
         {
-            if (id != updatedTodo.Id)
+            // Validación básica
+            if (updatedTodo == null || id != updatedTodo.Id)
             {
-                return BadRequest("El ID de la ruta no coincide con el ID del cuerpo.");
+                return BadRequest("Datos inválidos para la actualización.");
             }
 
-            var existingTodo = await _context.TodoItems.FindAsync(id);
-            if (existingTodo == null)
+            // Llama al servicio para intentar actualizar
+            var success = await _todoService.UpdateAsync(id, updatedTodo);
+
+            // Si el servicio devuelve false (no encontrado o fallo)...
+            if (!success)
             {
+                // Asumimos que si falla es porque no se encontró (simplificación)
                 return NotFound();
             }
 
-            existingTodo.Title = updatedTodo.Title;
-            existingTodo.IsCompleted = updatedTodo.IsCompleted;
-            existingTodo.DueDate = updatedTodo.DueDate;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                // Manejo básico (podría ser más robusto verificando si aún existe)
-                if (!_context.TodoItems.Any(e => e.Id == id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw; // Relanzar si no sabemos qué hacer
-                }
-            }
-
-            return NoContent();
+            // Si el servicio devuelve true (actualizado con éxito)...
+            return NoContent(); // Devuelve 204 No Content
         }
 
         // --- DELETE ---
+        // DELETE: api/todos/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteTodo(long id)
         {
-            var todoToDelete = await _context.TodoItems.FindAsync(id);
-            if (todoToDelete == null)
+            // Llama al servicio para intentar eliminar
+            var success = await _todoService.DeleteAsync(id);
+
+            // Si el servicio devuelve false (no encontrado)...
+            if (!success)
             {
                 return NotFound();
             }
 
-            _context.TodoItems.Remove(todoToDelete); // Marca para eliminar
-            await _context.SaveChangesAsync();      // Ejecuta DELETE en la BD
-
-            return NoContent();
+            // Si el servicio devuelve true (eliminado con éxito)...
+            return NoContent(); // Devuelve 204 No Content
         }
     }
 }

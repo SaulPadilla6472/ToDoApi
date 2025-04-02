@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TodoApi.Data; // El namespace donde está tu TodoContext
+using TodoApi.Services;
+using TodoApi.Services.Interfaces;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -15,7 +17,8 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 // Registrar TodoContext con el contenedor de Inyección de Dependencias (DI)
 builder.Services.AddDbContext<TodoContext>(options =>
     options.UseNpgsql(connectionString)); // Configurar para usar Npgsql (PostgreSQL)
-
+// Registrar nuestros servicios personalizados
+builder.Services.AddScoped<ITodoService, TodoService>();
 // --- Más servicios existentes como builder.Services.AddEndpointsApiExplorer(); ---
 
 builder.Services.AddEndpointsApiExplorer();
